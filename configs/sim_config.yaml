@@ -1,0 +1,32 @@
+# Domain and grid
+domain:
+  Lx: 1.0 # Length in x-direction (meters)
+  Ly: 1.0 # Length in y-direction (meters)
+  Nx: 200 # Grid points in x
+  Ny: 200 # Grid points in y
+
+# Physical parameters
+physics:
+  viscosity: 0.0001 # Kinematic viscosity (m^2/s) — optional
+  density: 1.0 # Fluid density (kg/m^3)
+
+# Obstacle settings
+cylinder:
+  radius: 0.1 # Radius of the cylinder
+  cx_range: [0.2, 0.6] # x-range for randomized center position
+  cy_range: [0.3, 0.7] # y-range for randomized center position
+
+# Inflow conditions
+boundary:
+  inflow_velocity: 35.0 # Uniform inflow speed (m/s)
+
+# Solver settings (for divergence calc)
+solver:
+  dt: 0.0001 # Time step (used in RHS computation)
+  use_initial_velocity: true # Whether to apply perturbations to u, v
+
+# Output
+output:
+  n_samples: 100 # Number of training samples to generate
+  out_dir: data/raw/ # Where to save the .npz files
+  seed: 42 # Random seed for reproducibility
