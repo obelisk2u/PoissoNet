@@ -3,7 +3,6 @@ import numpy as np
 import yaml
 from tqdm import trange
 from scipy.sparse.linalg import spsolve
-
 from utils.laplacian import build_laplacian
 
 def load_config(path="configs/sim_config.yaml"):
@@ -68,7 +67,6 @@ def generate_sample(seed, config, X, Y, dx, dy, L, output_dir):
                         rhs=rhs.astype(np.float32),
                         mask=mask.astype(np.float32),
                         pressure=pressure.astype(np.float32))
-    print(f"Saved: {out_path}")
 
 def main():
     config = load_config()
