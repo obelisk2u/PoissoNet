@@ -29,7 +29,7 @@ solver:
 output:
   n_samples: 100 # Number of training samples to generate
   out_dir: data/raw/ # Where to save the .npz files
-  seed: 42 # Random seed for reproducibility
+  seed: 41 # Random seed for reproducibility
 
 geometry:
   shapes: ["circle", "square", "ellipse"]
