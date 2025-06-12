@@ -1,2 +1,6 @@
 data/
 __pycache__/
+logs/
+train.sh
+poissonnet_venv/
+checkpoints/
