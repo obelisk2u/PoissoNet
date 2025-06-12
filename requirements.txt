@@ -1,3 +1,7 @@
 numpy
 tdqm
 scikit-learn
+torch
+PyYaml
+scipy
+scikit-image
