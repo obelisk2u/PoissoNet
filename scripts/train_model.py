@@ -6,8 +6,8 @@ Train PoissoNet on the combined dataset  data/poisso_train_5k.npz
 
 import os, numpy as np, torch, torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
-from tqdm import tqdm
 
+torch.set_num_threads(8)
 # ───────────────── Dataset ─────────────────
 class PoissoDataset(Dataset):
     def __init__(self, npz_path):
@@ -79,9 +79,8 @@ def main():
     n_train = n_total - n_val
     train_ds, val_ds = random_split(ds_full, [n_train, n_val])
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True)
-    val_loader   = DataLoader(val_ds,   batch_size=BATCH)
-
+    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,  num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_ds,   batch_size=BATCH, shuffle=False, num_workers=4, pin_memory=True)
     model = UNet().to(DEVICE)
     opt   = torch.optim.Adam(model.parameters(), lr=LR)
     loss_fn = nn.MSELoss()
@@ -91,7 +90,7 @@ def main():
         # --- training ---
         model.train()
         running = 0
-        for x, y in tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS}"):
+        for x, y in train_loader:
             x, y = x.to(DEVICE), y.to(DEVICE)
             opt.zero_grad()
             y_hat = model(x)
