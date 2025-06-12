@@ -97,13 +97,7 @@ def generate_sample(seed, config, X, Y, dx, dy, L, output_dir):
     rho = config["physics"]["density"]
     U = config["boundary"]["inflow_velocity"]
 
-    # Random shape type
-    shape_type = np.random.choice(config["geometry"]["shapes"])
-    r = config["geometry"]["radius"]
-    cx = (X.max() + X.min()) / 2
-    cy = (Y.max() + Y.min()) / 2
     mask = generate_fun_mask(X, Y, mode="mixed")
-
 
     u = np.ones((Ny, Nx)) * U
     v = np.zeros((Ny, Nx))
