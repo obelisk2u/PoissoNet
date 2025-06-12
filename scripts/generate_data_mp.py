@@ -6,6 +6,8 @@ from utils.laplacian import build_laplacian
 from skimage.draw import polygon2mask, disk
 from skimage.morphology import binary_dilation, disk as morph_disk
 from scipy.ndimage import gaussian_filter
+import multiprocessing as mp
+from functools import partial
 
 
 # ─────────────────── utility helpers ────────────────────
@@ -114,7 +116,12 @@ def generate_one(seed, cfg, X, Y, dx, dy, out_dir):
 # ───────────────────────── main ──────────────────────────
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--workers", type=int, default=8, help="Number of CPU processes")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.cpu_count() or mp.cpu_count(),  # auto-detect
+        help="Number of CPU processes (default: all cores)"
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -129,17 +136,21 @@ def main():
     seeds = [seed0 + i for i in range(n_samples)]
 
     # process_map shows a neat progress bar across processes
+    partial_fn = partial(
+            generate_one,
+            cfg=cfg,
+            X=X,
+            Y=Y,
+            dx=dx,
+            dy=dy,
+            out_dir=out_dir,
+        )
+
     process_map(
-        generate_one,
-        seeds,
+        partial_fn,           # ← only seed is left as a free arg
+        seeds,                # iterable over seeds
         max_workers=args.workers,
-        desc="Generating",
-        cfg=[cfg] * n_samples,
-        X=[X] * n_samples,
-        Y=[Y] * n_samples,
-        dx=[dx] * n_samples,
-        dy=[dy] * n_samples,
-        out_dir=[out_dir] * n_samples,
+        desc="Generating"
     )
 
 
