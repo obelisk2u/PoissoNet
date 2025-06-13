@@ -21,11 +21,12 @@ from tqdm import tqdm
 class PoissoDataset(Dataset):
     def __init__(self, data_path, cfg_path="configs/sim_config.yaml"):
         z = np.load(data_path)
-        self.rhs      = torch.from_numpy(z["rhs"]).float()        # [N,H,W]
+        SCALE = 1000
+        self.rhs      = torch.from_numpy(z["rhs"]).float() / SCALE        # [N,H,W]
         self.mask     = torch.from_numpy(z["mask"]).float()
-        self.pressure = torch.from_numpy(z["pressure"]).float()
-        self.u_star   = torch.from_numpy(z["u_star"]).float()
-        self.v_star   = torch.from_numpy(z["v_star"]).float()
+        self.pressure = torch.from_numpy(z["pressure"]).float() /SCALE
+        self.u_star   = torch.from_numpy(z["u_star"]).float() /SCALE
+        self.v_star   = torch.from_numpy(z["v_star"]).float() /SCALE
 
         # grid spacing constants for finite differences
         cfg = yaml.safe_load(open(cfg_path))
@@ -63,7 +64,7 @@ class DoubleConv(nn.Module):
     def forward(self, x): return self.net(x)
 
 class UNet(nn.Module):
-    def __init__(self, in_ch=2, base=32):
+    def __init__(self, in_ch=2, base=64):
         super().__init__()
         self.enc1 = DoubleConv(in_ch,      base)
         self.enc2 = DoubleConv(base,       base*2)
@@ -120,10 +121,10 @@ CKPT      = "checkpoints/poissonet.pt"
 os.makedirs("checkpoints", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
-BATCH   = 16
-EPOCHS  = 20
+BATCH   = 8
+EPOCHS  = 30
 LR      = 1e-3
-LAMBDA  = 0.3          # weight for divergence penalty
+LAMBDA  = 0.5          # weight for divergence penalty
 
 # ───────────────────────────────────────────────────────────
 # 5.  Training script
@@ -143,7 +144,7 @@ def main():
     # model, optimiser, scheduler
     model = UNet().to(DEVICE)
     opt   = torch.optim.Adam(model.parameters(), lr=LR)
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.3)
+    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=4, gamma=0.2)
 
     mse_loss = nn.MSELoss()
     best_val = float('inf')
