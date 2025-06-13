@@ -19,8 +19,9 @@ PoissoNet/
 │   ├── compress_data.py          # merge individual .npz → single archive
 │   ├── train_model.py            # physics‑informed U‑Net training loop
 │   ├── predict_and_plot.py       # inference + qualitative plot
-│   └── utils/
-│       └── laplacian.py          # sparse 5‑pt Laplacian builder
+├── utils/
+|   ├── laplacian.py
+|   └── compress_data.py          # sparse 5‑pt Laplacian builder
 └── checkpoints/                  # saved weights
 ```
 
