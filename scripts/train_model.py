@@ -124,7 +124,7 @@ os.makedirs("logs", exist_ok=True)
 BATCH   = 8
 EPOCHS  = 30
 LR      = 1e-3
-LAMBDA  = 0.5          # weight for divergence penalty
+LAMBDA  = 0.8          # weight for divergence penalty
 
 # ───────────────────────────────────────────────────────────
 # 5.  Training script
