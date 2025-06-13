@@ -1,63 +1,109 @@
 # PoissoNet
 
-**PoissoNet** is a neural network surrogate for solving the 2D pressure Poisson equation in incompressible fluid flow. The network learns to predict pressure fields from intermediate velocity divergence (`rhs`) and geometry masks, replacing traditional solvers like Conjugate Gradient (CG) with fast, differentiable inference.
+**Fast neural pressure solver with physics‑informed training**
+
+PoissoNet is a lightweight research project that generates synthetic CFD
+data, trains a deep U‑Net surrogate to solve the pressure Poisson
+equation, and evaluates the model with physically consistent metrics.
 
 ---
+## 1  Project structure
 
-## What We’ve Built So Far
-
-### Static CFD Simulation Pipeline [(Visit SimuFlow)](https://github.com/obelisk2u/SimuFlow)
-
-- **Governing equations**: Incompressible Navier–Stokes with finite difference discretization
-- **Pressure solve**: Sparse matrix Poisson solver using SciPy’s `spsolve()`
-- **Obstacle handling**: Mask-based enforcement of solid boundaries
-- **Velocity correction**: Pressure gradient projected back into velocity field
-- **Passive scalar**: Dye injected to visualize flow around obstacles
-
-### Data Generation Framework
-
-- **Grid**: 200×200 uniform Cartesian mesh
-- **Inputs per sample**:
-  - `rhs`: divergence of intermediate velocity field (∇·u\*)
-  - `mask`: 2D binary mask for geometry (1 = fluid, 0 = solid)
-  - `pressure`: ground‑truth solution of Poisson equation
-- **Obstacle types**:
-  - Circles
-  - Polygons
-  - Organic “blob” shapes from thresholded Gaussian noise
-- **Validation filters**:
-  - Ensures minimum fluid coverage
-  - Prevents degenerate samples (e.g., fully blocked domains)
+```
+PoissoNet/
+├── configs/
+│   └── sim_config.yaml           # domain size, fluid params, output paths
+├── scripts/
+│   ├── generate_data_mp.py       # multiprocess data generator
+│   ├── compress_data.py          # merge individual .npz → single archive
+│   ├── train_model.py            # physics‑informed U‑Net training loop
+│   ├── predict_and_plot.py       # inference + qualitative plot
+│   └── utils/
+│       └── laplacian.py          # sparse 5‑pt Laplacian builder
+└── checkpoints/                  # saved weights
+```
 
 ---
+## 2  Synthetic‑data pipeline
 
-## Next Steps
-
-### Model Training
-
-- Implement a U‑Net architecture in PyTorch for `pressure = f(rhs, mask)`
-- Normalize inputs and output dynamically
-- Train on 5k–10k samples using MSE loss
-- Add divergence penalty (optional) as a physics constraint
-
-### Replace CFD Poisson Step
-
-- Drop in PoissoNet as a surrogate for `spsolve()`
-- Measure speedup and pressure accuracy
-- Validate using dye visualization and ∇·u tracking
-
-### Scaling and Optimization
-
-- Convert dataset to a single `.npz` or HDF5 file for efficient loading
-- Add batching, augmentation (noise, rotation), and cloud storage support
-- Optional: train a resolution‑agnostic model (e.g., with FNO)
+1. **Configure** the domain in `configs/sim_config.yaml`
+   (grid, viscosity, inflow velocity, number of samples).
+2. **Generate** compressed training data  
+   ```bash
+   python -m scripts.generate_data_mp --workers 8
+   python -m scripts.compress_data
+   ```
+   *Each raw `.npz` contains `rhs`, `mask`, `pressure`, `u_star`, `v_star`
+   on a user‑defined `Nx × Ny` mesh.*
 
 ---
+## 3  Model
 
-## Example Sample
+| Component | Details |
+|-----------|---------|
+| Backbone  | 5‑level U‑Net (64 → 1024 channels) |
+| Activations | GELU + GroupNorm |
+| Loss | `MSE(p)` + `λ‖∇·u_new‖²` (divergence penalty) |
+| Solver prior | Central‑difference ∇ / divergence operators |
+| Mixed precision | Enabled via `torch.cuda.amp` |
 
-## ![](./output/sample_example.png)
+The network predicts a pressure field that, when back‑projected onto the
+intermediate velocity **u\***, yields a divergence‑free flow.
 
-## Motivation
+---
+## 4  Training
 
-Solving the Poisson equation is the dominant bottleneck in time‑stepping incompressible CFD making up ~97% of the elapsed time. PoissoNet offers a fast, learnable, and GPU‑accelerated alternative that could eventually enable real‑time simulation, differentiable physics, or surrogate‑based optimization.
+```bash
+# optional: create conda env
+conda create -n poissonet python=3.10 pytorch torchvision torchaudio                  -c pytorch -c nvidia
+conda activate poissonet
+
+pip install -r requirements.txt      # numpy, scipy, scikit‑image, tqdm,
+                                     # matplotlib, pyyaml
+
+# single‑GPU training (L40S / 3090 etc.)
+python -m scripts.train_model
+```
+
+Default hyper‑parameters:
+
+```yaml
+BATCH   = 32
+EPOCHS  = 40
+LR      = 2e‑3         # AdamW + cosine decay
+LAMBDA  = 0.8          # divergence weight
+```
+
+A full 40‑epoch run on an NVIDIA L40S finishes in ≈ 12 minutes.
+
+---
+## 5  Qualitative evaluation
+
+```bash
+python -m scripts.predict_and_plot
+```
+This script selects four random validation samples and writes
+`pred_vs_true.png`, comparing ground‑truth pressure (top row) to the
+network’s prediction (bottom row).
+
+---
+## 6  Reproducibility checklist
+
+* All random seeds are taken from `--seed` in the YAML or CLI.
+* Data and model checkpoints include the grid resolution (`Nx`, `Ny`).
+* Exact commit hash is logged to `logs/` at runtime.
+
+---
+## 7  Citation
+
+```
+@misc{poissonet2025,
+  title   = {PoissoNet: A Physics‑Informed U‑Net for Fast Pressure Projection},
+  author  = {Stout, Jordan},
+  year    = {2025},
+  note    = {https://github.com/<your‑repo>}
+}
+```
+
+---
+**License:** MIT
