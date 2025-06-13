@@ -53,27 +53,38 @@ class PoissoDataset(Dataset):
 # 2.  Mini-U-Net
 # ───────────────────────────────────────────────────────────
 class DoubleConv(nn.Module):
-    def __init__(self, in_ch, out_ch):
+    def __init__(self, in_ch, out_ch, groups=8):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.ReLU(inplace=True),
+            nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False),
+            nn.GroupNorm(groups, out_ch),
+            nn.GELU(),
+            nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False),
+            nn.GroupNorm(groups, out_ch),
+            nn.GELU(),
         )
     def forward(self, x): return self.net(x)
 
 class UNet(nn.Module):
     def __init__(self, in_ch=2, base=64):
         super().__init__()
-        self.enc1 = DoubleConv(in_ch,      base)
-        self.enc2 = DoubleConv(base,       base*2)
-        self.enc3 = DoubleConv(base*2,     base*4)
         self.pool = nn.MaxPool2d(2)
 
-        self.up2  = nn.ConvTranspose2d(base*4, base*2, 2, 2)
-        self.dec2 = DoubleConv(base*4, base*2)
-        self.up1  = nn.ConvTranspose2d(base*2, base,   2, 2)
+        # encoder
+        self.enc1 = DoubleConv(in_ch,          base)
+        self.enc2 = DoubleConv(base,           base*2)
+        self.enc3 = DoubleConv(base*2,         base*4)
+        self.enc4 = DoubleConv(base*4,         base*8)
+        self.enc5 = DoubleConv(base*8,         base*16)   # 1024 ch
+
+        # decoder
+        self.up4  = nn.ConvTranspose2d(base*16, base*8, 2, 2)
+        self.dec4 = DoubleConv(base*16, base*8)
+        self.up3  = nn.ConvTranspose2d(base*8,  base*4, 2, 2)
+        self.dec3 = DoubleConv(base*8,  base*4)
+        self.up2  = nn.ConvTranspose2d(base*4,  base*2, 2, 2)
+        self.dec2 = DoubleConv(base*4,  base*2)
+        self.up1  = nn.ConvTranspose2d(base*2,  base,   2, 2)
         self.dec1 = DoubleConv(base*2, base)
 
         self.out  = nn.Conv2d(base, 1, 1)
@@ -82,11 +93,13 @@ class UNet(nn.Module):
         e1 = self.enc1(x)
         e2 = self.enc2(self.pool(e1))
         e3 = self.enc3(self.pool(e2))
+        e4 = self.enc4(self.pool(e3))
+        e5 = self.enc5(self.pool(e4))
 
-        d2 = self.up2(e3)
-        d2 = self.dec2(torch.cat([d2, e2], dim=1))
-        d1 = self.up1(d2)
-        d1 = self.dec1(torch.cat([d1, e1], dim=1))
+        d4 = self.dec4(torch.cat([self.up4(e5), e4], 1))
+        d3 = self.dec3(torch.cat([self.up3(d4), e3], 1))
+        d2 = self.dec2(torch.cat([self.up2(d3), e2], 1))
+        d1 = self.dec1(torch.cat([self.up1(d2), e1], 1))
         return self.out(d1)
 
 
@@ -121,9 +134,9 @@ CKPT      = "checkpoints/poissonet.pt"
 os.makedirs("checkpoints", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
-BATCH   = 8
+BATCH   = 16
 EPOCHS  = 30
-LR      = 1e-3
+LR      = 2e-3
 LAMBDA  = 0.8          # weight for divergence penalty
 
 # ───────────────────────────────────────────────────────────
@@ -142,9 +155,11 @@ def main():
                               num_workers=4, pin_memory=torch.cuda.is_available())
 
     # model, optimiser, scheduler
+    mixed_precision = torch.cuda.is_available()
     model = UNet().to(DEVICE)
-    opt   = torch.optim.Adam(model.parameters(), lr=LR)
-    sched = torch.optim.lr_scheduler.StepLR(opt, step_size=4, gamma=0.2)
+    opt   = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-4)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS)
+    scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
 
     mse_loss = nn.MSELoss()
     best_val = float('inf')
@@ -157,26 +172,25 @@ def main():
             x, y = x.to(DEVICE), y.to(DEVICE)
             u_star = extra["u_star"].to(DEVICE)
             v_star = extra["v_star"].to(DEVICE)
-
             opt.zero_grad()
-            p_pred = model(x)
+            with torch.cuda.amp.autocast(enabled=mixed_precision):
+                p_pred = model(x)
+                mse = mse_loss(p_pred, y)
 
-            # MSE term
-            mse = mse_loss(p_pred, y)
+                # divergence penalty
+                dx, dy = full_ds.dx, full_ds.dy
+                dt, rho = full_ds.dt, full_ds.rho
+                dpdx = central_diff(p_pred, -1, dx)
+                dpdy = central_diff(p_pred, -2, dy)
+                u_new = u_star - (dt / rho) * dpdx
+                v_new = v_star - (dt / rho) * dpdy
+                div   = divergence(u_new, v_new, dx, dy)
+                div_pen = (div**2).mean()
 
-            # divergence penalty
-            dx, dy = full_ds.dx, full_ds.dy
-            dt, rho = full_ds.dt, full_ds.rho
-            dpdx = central_diff(p_pred, -1, dx)
-            dpdy = central_diff(p_pred, -2, dy)
-            u_new = u_star - (dt / rho) * dpdx
-            v_new = v_star - (dt / rho) * dpdy
-            div   = divergence(u_new, v_new, dx, dy)
-            div_pen = (div**2).mean()
-
-            loss = mse + LAMBDA * div_pen
-            loss.backward()
-            opt.step()
+                loss = mse + LAMBDA * div_pen
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
 
             run_train += loss.item() * x.size(0)
 
@@ -191,23 +205,27 @@ def main():
                 u_star = extra["u_star"].to(DEVICE)
                 v_star = extra["v_star"].to(DEVICE)
 
-                p_pred = model(x)
+                # ── AMP context (inference only) ─────────────────────────────
+                with torch.cuda.amp.autocast(enabled=mixed_precision):
+                    p_pred = model(x)
+                    mse    = mse_loss(p_pred, y)
 
-                mse = mse_loss(p_pred, y)
+                    dx, dy = full_ds.dx, full_ds.dy
+                    dt, rho = full_ds.dt, full_ds.rho
+                    dpdx = central_diff(p_pred, -1, dx)
+                    dpdy = central_diff(p_pred, -2, dy)
+                    u_new = u_star - (dt / rho) * dpdx
+                    v_new = v_star - (dt / rho) * dpdy
+                    div   = divergence(u_new, v_new, dx, dy)
+                    div_pen = (div**2).mean()
 
-                dx, dy = full_ds.dx, full_ds.dy
-                dt, rho = full_ds.dt, full_ds.rho
-                dpdx = central_diff(p_pred, -1, dx)
-                dpdy = central_diff(p_pred, -2, dy)
-                u_new = u_star - (dt / rho) * dpdx
-                v_new = v_star - (dt / rho) * dpdy
-                div   = divergence(u_new, v_new, dx, dy)
-                div_pen = (div**2).mean()
+                    loss = mse + LAMBDA * div_pen
 
-                run_val += (mse + LAMBDA * div_pen).item() * x.size(0)
+                run_val += loss.item() * x.size(0)
 
         val_loss = run_val / len(val_ds)
         sched.step()
+
 
         print(f"Epoch {epoch:02d} | lr {sched.get_last_lr()[0]:.2e} | "
               f"train {train_loss:.4e} | val {val_loss:.4e}")
