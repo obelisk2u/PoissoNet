@@ -118,12 +118,18 @@ def generate_sample(seed, config, X, Y, dx, dy, L, output_dir):
     pressure_flat = spsolve(L, rhs_flat)
     pressure = pressure_flat.reshape(Ny, Nx)
     pressure[mask == 0] = 0.0
+    u_star = u.astype(np.float32)   # copy before the projection step
+    v_star = v.astype(np.float32)
 
     out_path = os.path.join(output_dir, f"sample_{seed}.npz")
-    np.savez_compressed(out_path,
-                        rhs=rhs.astype(np.float32),
-                        mask=mask.astype(np.float32),
-                        pressure=pressure.astype(np.float32))
+    np.savez_compressed(
+        out_path,
+        rhs=rhs.astype(np.float32),
+        mask=mask.astype(np.float32),
+        pressure=pressure.astype(np.float32),
+        u_star=u_star,
+        v_star=v_star,
+    )
 
 def main():
     config = load_config()
