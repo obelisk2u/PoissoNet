@@ -38,6 +38,8 @@ PoissoNet/
    _Each raw `.npz` contains `rhs`, `mask`, `pressure`, `u_star`, `v_star`
    on a user‑defined `Nx × Ny` mesh._
 
+![Example Sample](plots/sample_example.png)
+
 ---
 
 ## 3  Model
@@ -91,6 +93,8 @@ python -m scripts.predict_and_plot
 This script selects four random validation samples and writes
 `pred_vs_true.png`, comparing ground‑truth pressure (top row) to the
 network’s prediction (bottom row).
+
+![Example Predictions](plots/pred_vs_true2.png)
 
 ---
 
