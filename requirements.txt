@@ -4,4 +4,5 @@ scikit-learn
 torch
 PyYaml
 scipy
+matplotlib
 scikit-image
